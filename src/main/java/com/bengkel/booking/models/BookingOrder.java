@@ -30,6 +30,4 @@ public class BookingOrder implements IBengkelPayment{
 		
 		setTotalPayment(getTotalServicePrice() - discount);
 	}
-
-	
 }

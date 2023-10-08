@@ -16,6 +16,4 @@ public class Motorcyle extends Vehicle {
 		super(vehiclesId, color, brand, transmisionType, yearRelease, "Motorcyle");
 		this.engineCapacity = engineCapacity;
 	}
-	
-	
 }
