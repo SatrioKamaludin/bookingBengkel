@@ -1,11 +1,10 @@
 package com.bengkel.booking.services;
 
-import java.lang.reflect.Member;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Scanner;
-import java.util.stream.Collector;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 import com.bengkel.booking.models.Customer;
 import com.bengkel.booking.models.ItemService;
@@ -14,7 +13,6 @@ import com.bengkel.booking.models.Vehicle;
 import com.bengkel.booking.repositories.ItemServiceRepository;
 import com.bengkel.booking.models.BookingOrder;
 import com.bengkel.booking.models.Car;
-import com.bengkel.booking.models.Motorcyle;
 
 public class BengkelService {
 	private static Scanner input = new Scanner(System.in);
@@ -30,11 +28,27 @@ public class BengkelService {
 
 	// Booking atau Reservation
 	public static void booking(Customer loggedInCustomer, List<BookingOrder> bookingOrders) {
+		List<ItemService> selectedServices = selectServices(loggedInCustomer);
+		if (selectedServices.isEmpty()) {
+			System.out.println("No services selected. Booking canceled.");
+			return;
+		}
+
+		String paymentMethod = selectPaymentMethod(loggedInCustomer, selectedServices);
+		if (paymentMethod == null) {
+			System.out.println("Invalid payment method. Booking canceled.");
+			return;
+		}
+
+		createAndAddBooking(loggedInCustomer, selectedServices, paymentMethod, bookingOrders);
+	}
+
+	private static List<ItemService> selectServices(Customer loggedInCustomer) {
 		PrintService.printVechicle(loggedInCustomer.getVehicles());
 		String vehicleId;
 		boolean validVehicleId = false;
-
 		List<ItemService> selectedServices = new ArrayList<>();
+		Set<String> selectedServiceIds = new HashSet<>();
 
 		while (!validVehicleId) {
 			System.out.print("Masukkan Vehicle Id: ");
@@ -62,6 +76,12 @@ public class BengkelService {
 
 						// Check if the entered serviceId exists in availableServices
 						boolean validServiceId = false;
+
+						if (selectedServiceIds.contains(serviceId)) {
+							System.out.println("Service Id " + serviceId + " sudah dipilih sebelumnya.");
+							continue; // Skip to the next iteration
+						}
+
 						for (ItemService service : availableServices) {
 							if (serviceId.equals(service.getServiceId())) {
 								validServiceId = true;
@@ -70,6 +90,7 @@ public class BengkelService {
 								totalBiaya += service.getPrice();
 								servicesAdded++;
 								selectedServices.add(service);
+								selectedServiceIds.add(serviceId);
 								break;
 							}
 						}
@@ -88,63 +109,6 @@ public class BengkelService {
 					if (servicesAdded == maxServicesAllowed) {
 						System.out.println("Anda telah mencapai batas maksimum jumlah service.");
 					}
-
-					boolean validPaymentMethod = false;
-					while (!validPaymentMethod) {
-						System.out.println("Silahkan Pilih Metode Pembayaran (Saldo Coin atau Cash)");
-						String paymentMethod = input.nextLine();
-						double totalPembayaran = 0;
-						if (paymentMethod.equalsIgnoreCase("Saldo Coin")) {
-							if (loggedInCustomer instanceof MemberCustomer) {
-								MemberCustomer memberCustomer = (MemberCustomer) loggedInCustomer;
-								double saldoCoin = memberCustomer.getSaldoCoin();
-								
-
-								System.out.println(
-										"Selamat, anda mendapatkan diskon sebesar 10% dari penggunaan saldo coin!!!");
-								totalPembayaran = totalBiaya * 0.9;
-								System.out.println("Total Biaya: " + totalPembayaran);
-
-								if (saldoCoin < totalBiaya) {
-									System.out.println("Saldo Coin anda kurang dari total biaya booking.");
-									break;
-								}
-
-								saldoCoin -= totalPembayaran;
-								memberCustomer.setSaldoCoin(saldoCoin);
-								System.out.println("Pembayaran Berhasil menggunakan saldo coin");
-								System.out.println("Saldo Coin anda: " + memberCustomer.getSaldoCoin());
-								validPaymentMethod = true;
-
-								int bookingIdCounter = bookingOrders.size() + 1;
-								String bookingId = "Book-" + loggedInCustomer.getCustomerId() + "-"
-										+ String.format("%03d", bookingIdCounter);
-								BookingOrder bookingOrder = new BookingOrder(bookingId, loggedInCustomer,
-										selectedServices, paymentMethod, totalBiaya, totalPembayaran);
-								bookingOrders.add(bookingOrder);
-								System.out.println("Booking Order berhasil ditambahkan dengan ID: " + bookingId);
-
-							} else {
-								System.out.println("Maaf, fitur ini hanya untuk member saja!");
-							}
-						} else if (paymentMethod.equalsIgnoreCase("Cash")) {
-							totalPembayaran = totalBiaya;
-							System.out.println("Total Biaya: " + totalPembayaran);
-							System.out.println("Pembayaran Berhasil menggunakan Cash");
-							validPaymentMethod = true;
-							int bookingIdCounter = bookingOrders.size() + 1;
-							String bookingId = "Book-" + loggedInCustomer.getCustomerId() + "-"
-									+ String.format("%03d", bookingIdCounter);
-
-							// Create a BookingOrder object and add it to the list
-							BookingOrder bookingOrder = new BookingOrder(bookingId, loggedInCustomer, selectedServices,
-									paymentMethod, totalBiaya, totalPembayaran);
-							bookingOrders.add(bookingOrder);
-							System.out.println("Booking Order berhasil ditambahkan dengan ID: " + bookingId);
-						} else {
-							System.out.println("Metode Pembayaran tidak valid.");
-						}
-					}
 					break;
 				}
 			}
@@ -153,6 +117,81 @@ public class BengkelService {
 				System.out.println("Vehicle Id yang dicari tidak tersedia.");
 			}
 		}
+
+		return selectedServices;
+	}
+
+	private static String selectPaymentMethod(Customer loggedInCustomer, List<ItemService> selectedServices) {
+		boolean validPaymentMethod = false;
+		String paymentMethod = null;
+		double totalBiaya = calculateTotalBiaya(selectedServices);
+
+		while (!validPaymentMethod) {
+			System.out.println("Silahkan Pilih Metode Pembayaran (Saldo Coin atau Cash)");
+			paymentMethod = input.nextLine();
+			double totalPembayaran = 0;
+
+			if (paymentMethod.equalsIgnoreCase("Saldo Coin")) {
+				if (loggedInCustomer instanceof MemberCustomer) {
+					MemberCustomer memberCustomer = (MemberCustomer) loggedInCustomer;
+					double saldoCoin = memberCustomer.getSaldoCoin();
+
+					System.out.println("Selamat, anda mendapatkan diskon sebesar 10% dari penggunaan saldo coin!!!");
+					totalPembayaran = totalBiaya * 0.9;
+					System.out.println("Total Biaya: " + totalPembayaran);
+
+					if (saldoCoin < totalBiaya) {
+						System.out.println("Saldo Coin anda kurang dari total biaya booking.");
+						continue;
+					}
+
+					saldoCoin -= totalPembayaran;
+					memberCustomer.setSaldoCoin(saldoCoin);
+					System.out.println("Pembayaran Berhasil menggunakan saldo coin");
+					System.out.println("Saldo Coin anda: " + memberCustomer.getSaldoCoin());
+					validPaymentMethod = true;
+				} else {
+					System.out.println("Maaf, fitur ini hanya untuk member saja!");
+					continue;
+				}
+			} else if (paymentMethod.equalsIgnoreCase("Cash")) {
+				totalPembayaran = totalBiaya;
+				System.out.println("Total Biaya: " + totalPembayaran);
+				System.out.println("Pembayaran Berhasil menggunakan Cash");
+				validPaymentMethod = true;
+			} else {
+				System.out.println("Metode Pembayaran tidak valid.");
+			}
+		}
+
+		return paymentMethod;
+	}
+
+	private static double calculateTotalBiaya(List<ItemService> selectedServices) {
+		double totalBiaya = 0.0;
+		for (ItemService service : selectedServices) {
+			totalBiaya += service.getPrice();
+		}
+		return totalBiaya;
+	}
+
+	private static void createAndAddBooking(
+			Customer loggedInCustomer,
+			List<ItemService> selectedServices,
+			String paymentMethod,
+			List<BookingOrder> bookingOrders) {
+		int bookingIdCounter = bookingOrders.size() + 1;
+		String bookingId = "Book-" + loggedInCustomer.getCustomerId() + "-" + String.format("%03d", bookingIdCounter);
+
+		double totalBiaya = calculateTotalBiaya(selectedServices);
+		double totalPembayaran = (paymentMethod.equalsIgnoreCase("Saldo Coin")) ? totalBiaya * 0.9 : totalBiaya;
+
+		// Create a BookingOrder object and add it to the list
+		BookingOrder bookingOrder = new BookingOrder(bookingId, loggedInCustomer, selectedServices, paymentMethod,
+				totalBiaya, totalPembayaran);
+		bookingOrders.add(bookingOrder);
+
+		System.out.println("Booking Order berhasil ditambahkan dengan ID: " + bookingId);
 	}
 
 	// Top Up Saldo Coin Untuk Member Customer
